@@ -46,7 +46,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬТЕ_СЮДА_ТОКЕН_О
 # Заглушки-ссылки на 4 раздела. Как будут готовы — просто замените адреса.
 LINKS = {
     "site": "https://example.com",                 # 1. Сайт (пока не сделан)
-    "channel": "https://t.me/AvitOzonWb_bot",    # 2. Телеграм-канал
+    "channel": "https://t.me/rejug9rgjb9re495",    # 2. Телеграм-канал
     "chat": "https://t.me/jgeierethg985989",          # 3. Чат единомышленников
     "ai": "https://t.me/AvitOzonWb1_bot",          # 4. AI-ассистент
 }
