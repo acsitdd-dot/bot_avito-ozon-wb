@@ -53,7 +53,8 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("🔄 Сбросить диалог"), KeyboardButton("ℹ️ Помощь")]
     ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, persistent=True)
+    # Исправлено: в python-telegram-bot аргумент называется is_persistent
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -105,7 +106,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
     try:
-        # Ограничиваем max_tokens примерно до 1500-1800, чтобы ответ не превышал ~4000 символов
         response = client.chat.completions.create(
             model=MODEL,
             max_tokens=1500,
@@ -125,7 +125,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     chat_history.append({"role": "assistant", "content": answer})
     
-    # Отправка ответа с сохранением клавиатуры
     await update.message.reply_text(answer, reply_markup=get_main_keyboard())
 
 
@@ -142,7 +141,8 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("AI-ассистент запущен с кнопками и лимитом сообщений. Нажмите Ctrl+C для остановки.")
-    app.run_polling()
+    # drop_pending_updates=True сбрасывает старые зависшие запросы при перезапуске на Railway
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
