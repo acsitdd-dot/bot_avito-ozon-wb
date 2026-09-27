@@ -1,42 +1,6 @@
-"""
-AI-ассистент для консультаций по продвижению на Авито/WB/Ozon
-================================================================
-Версия на Groq — БЕСПЛАТНЫЙ API (в отличие от Anthropic).
-
-Отдельный Telegram-бот. Клиент пишет ему вопрос ("почему мало просмотров",
-"как оформить карточку" и т.д.) — бот отвечает как консультант, опираясь
-на встроенную методику аудита (см. SYSTEM_PROMPT ниже).
-
-Это и есть пункт "4. AI-ассистент" из общей навигации (bot.py).
-Когда получите этого бота от @BotFather — вставьте его @username
-в LINKS["ai"] в файле bot.py.
-
-Что нужно для запуска:
-1. Установить библиотеки:
-   python -m pip install python-telegram-bot groq
-
-2. Получить токен ЭТОГО бота у @BotFather (это ДРУГОЙ бот, отдельный
-   от навигационного) — команда /newbot, скопировать токен.
-
-3. Получить БЕСПЛАТНЫЙ ключ Groq:
-   - Зайти на https://console.groq.com/keys
-   - Войти (через Google-аккаунт можно) -> Create API Key
-   - Никакой карты и оплаты не требуется на момент написания кода
-
-4. Вставить оба значения ниже (BOT_TOKEN и GROQ_API_KEY)
-   или задать их как переменные окружения с теми же именами.
-
-5. Запуск:
-   python ai_assistant_bot.py
-
-Важно: бесплатные лимиты Groq (сколько запросов в минуту/день) со временем
-меняются — если бот начнёт отвечать ошибкой "rate limit", проверьте текущие
-лимиты на https://console.groq.com/settings/limits
-"""
-
 import os
 import logging
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 from groq import Groq
 
@@ -48,16 +12,8 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("AI_BOT_TOKEN", "ВСТАВЬТЕ_СЮДА_ТОКЕН_ЭТОГО_БОТА")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "ВСТАВЬТЕ_СЮДА_КЛЮЧ_GROQ")
 
-MODEL = "openai/gpt-oss-20b"  # подтверждено вашим ключом через check_groq_models.py
+MODEL = "openai/gpt-oss-20b"  # подтверждено вашим ключом
 
-# Проверено 26.09.2026 запросом к /v1/models — модель реально доступна.
-# Если Groq снова изменит список, запустите check_groq_models.py ещё раз
-# и возьмите любую строку без "whisper", "prompt-guard", "orpheus" (это не
-# чат-модели, а речь/безопасность/голос).
-
-# Здесь — ваша методика. Отредактируйте под себя: чем подробнее, тем точнее
-# будут ответы бота. Это как раз то, что вы объясняете клиентам вручную —
-# сейчас это делает бот 24/7.
 SYSTEM_PROMPT = """
 Ты — AI-консультант по продвижению на маркетплейсах (Авито, Wildberries, Ozon).
 Ты помогаешь ученикам курса разобраться с их объявлениями/карточками товаров.
@@ -85,38 +41,62 @@ SYSTEM_PROMPT = """
   специализация, и посоветуй обратиться к профильному специалисту
 """
 
-# Сколько последних сообщений помнить в рамках диалога с одним пользователем
 HISTORY_LIMIT = 12
+MAX_MESSAGE_LENGTH = 4000  # Лимит символов для отправки в Telegram
 
 # ==========================================================================
 
 client = Groq(api_key=GROQ_API_KEY)
-
-# Простая память в оперативной памяти процесса: {chat_id: [сообщения]}
-# При перезапуске бота история обнуляется. Для продакшена лучше вынести
-# в БД (Redis/SQLite) — скажите, если нужно это добавить.
 history: dict[int, list[dict]] = {}
+
+def get_main_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = [
+        [KeyboardButton("🔄 Сбросить диалог"), KeyboardButton("ℹ️ Помощь")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, persistent=True)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     history[chat_id] = []
-    await update.message.reply_text(
+    
+    welcome_text = (
         "Привет! Я AI-консультант по продвижению на Авито/WB/Ozon.\n\n"
         "Пришлите текст вашего объявления (заголовок, описание, цену) "
-        "или конкретный вопрос — разберу и дам рекомендации.\n\n"
-        "Команда /reset — начать диалог заново."
+        "или задайте конкретный вопрос — разберу и дам рекомендации.\n\n"
+        "Используйте кнопки ниже или команду /reset для сброса диалога."
     )
+    await update.message.reply_text(welcome_text, reply_markup=get_main_keyboard())
 
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    history[update.effective_chat.id] = []
-    await update.message.reply_text("Диалог сброшен. Пишите новый вопрос.")
+    chat_id = update.effective_chat.id
+    history[chat_id] = []
+    await update.message.reply_text(
+        "Диалог сброшен. Пишите новый вопрос.", 
+        reply_markup=get_main_keyboard()
+    )
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    help_text = (
+        "💡 <b>Как пользоваться ботом:</b>\n\n"
+        "1. Отправьте текст объявления, карточки или опишите вашу проблему с продажами.\n"
+        "2. Бот проанализирует данные по методике (заголовок, фото, цена, описание и др.).\n"
+        "3. Нажмите кнопку <b>🔄 Сбросить диалог</b>, чтобы начать консультацию с чистого листа."
+    )
+    await update.message.reply_text(help_text, parse_mode="HTML", reply_markup=get_main_keyboard())
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     user_text = update.message.text
+
+    # Обработка нажатий на текстовые кнопки с клавиатуры
+    if user_text == "🔄 Сбросить диалог":
+        return await reset(update, context)
+    elif user_text == "ℹ️ Помощь":
+        return await help_command(update, context)
 
     chat_history = history.setdefault(chat_id, [])
     chat_history.append({"role": "user", "content": user_text})
@@ -125,34 +105,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
     try:
+        # Ограничиваем max_tokens примерно до 1500-1800, чтобы ответ не превышал ~4000 символов
         response = client.chat.completions.create(
             model=MODEL,
-            max_tokens=1000,
+            max_tokens=1500,
             messages=[{"role": "system", "content": SYSTEM_PROMPT}] + chat_history,
         )
         answer = response.choices[0].message.content
     except Exception as e:
-        logger.exception("Ошибка обращения к Anthropic API")
+        logger.exception("Ошибка обращения к Groq API")
         answer = (
             "Не получилось получить ответ от AI (техническая ошибка). "
             "Попробуйте ещё раз через минуту."
         )
 
+    # Принудительное ограничение по длине в символах для Telegram (4096 макс)
+    if len(answer) > MAX_MESSAGE_LENGTH:
+        answer = answer[:MAX_MESSAGE_LENGTH] + "\n\n...(ответ сокращен из-за лимита Telegram)"
+
     chat_history.append({"role": "assistant", "content": answer})
-    await update.message.reply_text(answer)
+    
+    # Отправка ответа с сохранением клавиатуры
+    await update.message.reply_text(answer, reply_markup=get_main_keyboard())
 
 
 def main() -> None:
     if "ВСТАВЬТЕ_СЮДА" in BOT_TOKEN or "ВСТАВЬТЕ_СЮДА" in GROQ_API_KEY:
-        print("⚠️  Заполните BOT_TOKEN и GROQ_API_KEY перед запуском (см. инструкцию вверху файла).")
+        print("⚠️ Заполните BOT_TOKEN и GROQ_API_KEY перед запуском (см. инструкцию вверху файла).")
         return
 
     app = Application.builder().token(BOT_TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reset", reset))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("AI-ассистент запущен. Нажмите Ctrl+C для остановки.")
+    print("AI-ассистент запущен с кнопками и лимитом сообщений. Нажмите Ctrl+C для остановки.")
     app.run_polling()
 
 
