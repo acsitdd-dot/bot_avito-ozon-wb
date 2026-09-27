@@ -5,12 +5,18 @@ AI-ассистент для консультаций по продвижени�
 С поддержкой анализа фотографий карточек товаров и разбивкой длинных сообщений.
 """
 
-import os
-import logging
 import base64
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
+import logging
+import os
 from openai import OpenAI
+from telegram import ReplyKeyboardMarkup, Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,7 +65,7 @@ client = OpenAI(
 history: dict[int, list[dict]] = {}
 
 # Клавиатура с удобными кнопками управления
-reply_markup = ReplyKeyboardMarkup([['/start', '/reset']], resize_keyboard=True)
+reply_markup = ReplyKeyboardMarkup([["/start", "/reset"]], resize_keyboard=True)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -70,18 +76,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Пришлите текст вашего объявления, фото карточки "
         "или конкретный вопрос — разберу и дам рекомендации.\n\n"
         "Воспользуйтесь кнопками ниже для управления.",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
     )
 
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     history[update.effective_chat.id] = []
-    await update.message.reply_text("Диалог сброшен. Пишите новый вопрос.", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "Диалог сброшен. Пишите новый вопрос.", reply_markup=reply_markup
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-    user_text = update.message.text or update.message.caption or "Проанализируй это изображение."
+    user_text = (
+        update.message.text
+        or update.message.caption
+        or "Проанализируй это изображение."
+    )
 
     # Формируем структуру сообщения (поддержка текста и мультимедиа)
     message_content = [{"type": "text", "text": user_text}]
@@ -90,10 +102,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.message.photo:
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
-        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+        base64_image = base64.b64encode(photo_bytes).decode("utf-8")
         message_content.append({
             "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
         })
 
     chat_history = history.setdefault(chat_id, [])
@@ -106,7 +118,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         response = client.chat.completions.create(
             model=MODEL,
             max_tokens=2000,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}] + chat_history,
+            messages=[{"role": "system", "content": SYSTEM_PROMPT}]
+            + chat_history,
         )
         answer = response.choices[0].message.content
     except Exception as e:
@@ -121,15 +134,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Делим слишком длинный ответ на фрагменты до 4000 символов
     for i in range(0, len(answer), MAX_MESSAGE_LENGTH):
-        await update.message.reply_text(answer[i:i + MAX_MESSAGE_LENGTH], reply_markup=reply_markup)
+        await update.message.reply_text(
+            answer[i : i + MAX_MESSAGE_LENGTH], reply_markup=reply_markup
+        )
 
 
 def main() -> None:
     if not BOT_TOKEN:
-        print("⚠️  Ошибка: не задана переменная окружения AI_BOT_TOKEN!")
+        print("⚠️ Ошибка: не задана переменная окружения AI_BOT_TOKEN!")
         return
     if not OPENROUTER_API_KEY:
-        print("⚠️  Ошибка: не задана переменная окружения OPENROUTER_API_KEY!")
+        print("⚠️ Ошибка: не задана переменная окружения OPENROUTER_API_KEY!")
         return
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -137,7 +152,11 @@ def main() -> None:
     app.add_handler(CommandHandler("reset", reset))
 
     # Принимаем и текстовые сообщения, и фото
-    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, handle_message))
+    app.add_handler(
+        MessageHandler(
+            (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, handle_message
+        )
+    )
 
     print("AI-ассистент запущен и готов к работе.")
     app.run_polling()
